@@ -1,17 +1,13 @@
-# NodeJS
-/node_modules
-
-# PHP
+# Composer
 /vendor
 
-# App
-/.cache
-/dist
-/public
+# Phpstan
 /tmp
+
+# Nuxt
+/node_modules
+/.nuxt
+/dist
 
 # Vercel
 .vercel
-
-# Env
-/.env

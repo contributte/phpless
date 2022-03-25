@@ -1,58 +1,161 @@
 <?php declare(strict_types = 1);
 
-use App\Http;
-use App\Utils;
-use Contributte\Utils\FileSystem;
-use Contributte\Utils\Strings;
 use Nette\Neon\Neon;
+use Nette\Utils\FileSystem;
+use Nette\Utils\Json;
+use Nette\Utils\Strings;
 use PHPStan\Analyser\Analyser;
 use PHPStan\DependencyInjection\ContainerFactory;
 
 require __DIR__ . '/../vendor/autoload.php';
 
-Http::cors();
+final class App
+{
 
-$code = $_POST['code'] ?? $_GET['code'] ?? '';
-$level = $_POST['level'] ?? $_GET['level'] ?? 'max';
+	public static ?string $ROOT_DIR;
+	public static ?string $TMP_DIR;
+	public static ?string $PHPSTAN_TMP_DIR;
+	public static ?string $CODE_FILE;
+	public static ?string $PHPSTAN_FILE;
 
-$tmpDir = Utils::getTmp();
-$rootDir = Utils::getRoot();
+	public static function init()
+	{
+		if (self::isVercel()) {
+			self::$TMP_DIR = '/tmp';
+		} else {
+			self::$TMP_DIR = self::$ROOT_DIR . '/tmp';
+		}
 
-$codeFile = $tmpDir . '/tmp.php';
-if (empty($code)) Http::error('Missing code');
-$code = '<?php ' . Strings::replacePrefix($code, '<?php');
-FileSystem::write($codeFile, $code);
+		self::$ROOT_DIR = realpath(__DIR__ . '/..');
+		self::$PHPSTAN_TMP_DIR = self::$TMP_DIR . '/phpstan';
+		self::$CODE_FILE = self::$TMP_DIR . '/code.php';
+		self::$PHPSTAN_FILE = self::$TMP_DIR . '/phpstan.neon';
+	}
 
-$configFiles = [
-	'phar://' . $rootDir . '/vendor/phpstan/phpstan/phpstan.phar/conf/staticReflection.neon',
-];
+	public static function error(string $error, int $code = 400): void
+	{
+		self::json(['error' => $error], $code);
+	}
 
-$configFile = $tmpDir . '/phpstan.neon';
-$neon = Neon::encode([
-	'includes' => $configFiles,
-	'parameters' => [
-		'inferPrivatePropertyTypeFromConstructor' => true,
-		'treatPhpDocTypesAsCertain' => $event['treatPhpDocTypesAsCertain'] ?? true,
-		'phpVersion' => $event['phpVersion'] ?? 80000,
-	],
-]);
-FileSystem::write($configFile, $neon);
+	public static function json(array $data, int $code = 200): void
+	{
+		self::header('content-type', 'application/json');
+		self::statusCode($code);
+		echo Json::encode($data);
+		exit();
+	}
 
-require_once 'phar://' . $rootDir . '/vendor/phpstan/phpstan/phpstan.phar/stubs/runtime/ReflectionUnionType.php';
+	public static function isPreflight(): bool
+	{
+		return mb_strtoupper($_SERVER['REQUEST_METHOD']) === 'OPTIONS';
+	}
 
-$containerFactory = new ContainerFactory($tmpDir);
-$container = $containerFactory->create($tmpDir, [sprintf('%s/config.level%s.neon', $containerFactory->getConfigDirectory(), $level), $configFile], [$codeFile]);
+	public static function cors(): void
+	{
+		self::header('Access-Control-Allow-Origin', '*');
+		self::header('Access-Control-Allow-Methods', '*');
+		self::header('Access-Control-Allow-Headers', '*');
+	}
 
-/** @var Analyser $analyser */
-$analyser = $container->getByType(Analyser::class);
-$results = $analyser->analyse([$codeFile], null, null, false, [$codeFile])->getErrors();
+	public static function header(string $name, string $value): void
+	{
+		header($name . ': ' . $value, false);
+	}
 
-$errors = [];
-foreach ($results as $result) {
-	$errors[] = [
-		'message' => $result->getMessage(),
-		'line' => $result->getLine(),
-	];
+	public static function statusCode(int $code): void
+	{
+		http_response_code($code);
+	}
+
+	public static function terminate(): void
+	{
+		exit();
+	}
+
+	public static function isVercel(): bool
+	{
+		return !($_SERVER['VERCEL_REGION'] ?? null);
+	}
+
+	public static function analyse(): void
+	{
+		$code = $_POST['code'] ?? null;
+		$level = $_POST['level'] ?? 9;
+
+		// Code is required
+		if (!$code) {
+			self::error('No code given');
+			self::terminate();
+		}
+
+		// Dump code.php
+		FileSystem::write(self::$CODE_FILE, "<?php " . Strings::replace($code, '#^\<\?php#', ''));
+
+		// Dump phpstan.neon
+		FileSystem::write(self::$PHPSTAN_FILE, Neon::encode([
+			'includes' => [
+				'phar://' . self::$ROOT_DIR . '/vendor/phpstan/phpstan/phpstan.phar/conf/staticReflection.neon',
+			],
+			'parameters' => [
+				'inferPrivatePropertyTypeFromConstructor' => true,
+				'treatPhpDocTypesAsCertain' => true,
+				'phpVersion' => 80000,
+			],
+		]));
+
+		// Require PHPStan's internal files
+		require_once 'phar://' . self::$ROOT_DIR . '/vendor/phpstan/phpstan/phpstan.phar/stubs/runtime/ReflectionUnionType.php';
+		require_once 'phar://' . self::$ROOT_DIR . '/vendor/phpstan/phpstan/phpstan.phar/stubs/runtime/ReflectionIntersectionType.php';
+		require_once 'phar://' . self::$ROOT_DIR . '/vendor/phpstan/phpstan/phpstan.phar/stubs/runtime/ReflectionAttribute.php';
+		require_once 'phar://' . self::$ROOT_DIR . '/vendor/phpstan/phpstan/phpstan.phar/stubs/runtime/Attribute.php';
+		require_once 'phar://' . self::$ROOT_DIR . '/vendor/phpstan/phpstan/phpstan.phar/stubs/runtime/Enum/UnitEnum.php';
+		require_once 'phar://' . self::$ROOT_DIR . '/vendor/phpstan/phpstan/phpstan.phar/stubs/runtime/Enum/BackedEnum.php';
+		require_once 'phar://' . self::$ROOT_DIR . '/vendor/phpstan/phpstan/phpstan.phar/stubs/runtime/Enum/ReflectionEnum.php';
+		require_once 'phar://' . self::$ROOT_DIR . '/vendor/phpstan/phpstan/phpstan.phar/stubs/runtime/Enum/ReflectionEnumUnitCase.php';
+		require_once 'phar://' . self::$ROOT_DIR . '/vendor/phpstan/phpstan/phpstan.phar/stubs/runtime/Enum/ReflectionEnumBackedCase.php';
+
+		// Create PHPStan container
+		$containerFactory = new ContainerFactory(self::$PHPSTAN_TMP_DIR);
+		$container = $containerFactory->create(
+			self::$PHPSTAN_TMP_DIR,
+			[sprintf('%s/config.level%s.neon', $containerFactory->getConfigDirectory(), $level), self::$PHPSTAN_FILE],
+			[self::$CODE_FILE]
+		);
+
+		// Analyse code
+		/** @var Analyser $analyser */
+		$analyser = $container->getByType(Analyser::class);
+		$results = $analyser->analyse([self::$CODE_FILE], null, null, false, [self::$CODE_FILE])->getErrors();
+
+		// Collect errors
+		$errors = [];
+		foreach ($results as $result) {
+			if (is_string($result)) {
+				$errors[] = [
+					'message' => $result,
+					'line' => 1,
+				];
+			} else {
+				$errors[] = [
+					'message' => $result->getMessage(),
+					'line' => $result->getLine(),
+				];
+			}
+		}
+
+		self::json(['errors' => $errors, 'level' => $level]);
+	}
+
 }
 
-Http::json(['result' => $errors, 'level' => $level]);
+App::init();
+
+// Check if it's preflight request
+if (App::isPreflight()) {
+	App::cors();
+	App::terminate();
+}
+
+// Analyse given code
+App::cors();
+App::analyse();

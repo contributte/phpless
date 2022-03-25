@@ -1,29 +1,38 @@
 {
   "compilerOptions": {
-    "strict": true,
-    "esModuleInterop": true,
     "target": "ES2018",
-    "module": "CommonJS",
-    "outDir": "dist",
-    "sourceMap": false,
-    "declaration": false,
-    "typeRoots": [
-      "./node_modules/@types",
+    "module": "ESNext",
+    "moduleResolution": "Node",
+    "lib": [
+      "ESNext",
+      "ESNext.AsyncIterable",
+      "DOM"
     ],
-    "noFallthroughCasesInSwitch": true,
-    "noImplicitReturns": true,
-    "noEmitOnError": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "removeComments": true,
-    "preserveConstEnums": true
+    "esModuleInterop": true,
+    "allowJs": true,
+    "sourceMap": true,
+    "strict": true,
+    "noEmit": true,
+    "experimentalDecorators": true,
+    "baseUrl": ".",
+    "paths": {
+      "~/*": [
+        "./web/*"
+      ],
+      "@/*": [
+        "./web/*"
+      ]
+    },
+    "types": [
+      "@types/node",
+      "@nuxt/types",
+      "@nuxtjs/axios"
+    ]
   },
   "exclude": [
-    ".cache",
-    ".vercel",
+    "node_modules",
+    ".nuxt",
     "api",
-    "dist",
     "tmp",
-    "vendor",
   ]
 }
