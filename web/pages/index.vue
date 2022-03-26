@@ -1,5 +1,5 @@
 <template>
-	<div class="container mx-auto">
+	<div class="max-w-3xl mx-auto">
 		<h1 class="font-bold text-4xl mt-8">PHPStan</h1>
 		<div class="border-t border-2 border-gray-300 my-4"></div>
 		<div class="flex flex-col space-y-4">
